@@ -137,6 +137,9 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     if (!track.trackTitle.length) return;
     NSString *trackID = SGKaraokePlayingTrack();
     checkSleepTimer(player, state, trackID);
+    // A dismissed/disabled activity cannot be started in the background. Keep the sleep timer
+    // working, but do not fetch lyrics or rebuild queue/UI payloads that nobody can display.
+    if (!SGRLiveActivityBridge.isShowing && UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
 
     NSInteger view = SGInt(SGRKeyLiveActivityView, SGRLiveActivityLyrics);
     BOOL paused = state.isPaused;
@@ -262,6 +265,7 @@ void SGRSetLiveActivityEnabled(BOOL on) {
             }];
         });
         sg_timer = [NSTimer timerWithTimeInterval:kTick repeats:YES block:^(NSTimer *t) { tick(); }];
+        sg_timer.tolerance = 0.05;
         [NSRunLoop.mainRunLoop addTimer:sg_timer forMode:NSRunLoopCommonModes];
         SGLog(@"live activity: on");
     }

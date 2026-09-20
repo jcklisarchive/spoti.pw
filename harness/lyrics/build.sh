@@ -2,6 +2,8 @@
 set -eu
 cd "$(dirname "$0")"
 mkdir -p build
+cc rendering.c -o build/rendering
+build/rendering
 xcrun clang -fobjc-arc -fblocks -O2 -I ../../tweak/Sources -framework Foundation -framework CoreFoundation \
     main.m ../../tweak/Sources/Shared/Lyrics/KaraokeTiming.m \
     ../../tweak/Sources/Shared/Lyrics/Romanization.m \

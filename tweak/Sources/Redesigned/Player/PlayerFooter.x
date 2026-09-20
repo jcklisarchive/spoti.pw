@@ -1,4 +1,4 @@
-// Player redesign: the footer as the Music app's row of three glyphs, lyrics, devices and queue, spread
+// Player redesign: the footer's lyrics, SingAlong, devices and queue glyphs, spread
 // evenly across the player, and no share button.
 //
 // Spotify's footer is Connect with the device's name at the leading edge, share, and the queue at the
@@ -18,15 +18,16 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Player.h"
+#import "Shared/Navigation/Links.h"
 
 static const CGFloat kLyricsGlyphSize = 20;
 // Filled and at full strength while the lyrics are up, the way the Music app marks the control that is on.
 static NSString *const kLyricsSymbol = @"quote.bubble", *const kLyricsSymbolOpen = @"quote.bubble.fill";
-// Where the three glyphs sit, as parts of the footer's width.
-static const CGFloat kLeading = 0.2, kMiddle = 0.5, kTrailing = 0.8;
+// Four evenly spaced 44pt targets, mirrored for right-to-left layouts.
+static const CGFloat kLeading = 0.125, kSingalong = 0.375, kMiddle = 0.625, kTrailing = 0.875;
 static const CGFloat kGlyphMaxWidth = 30;
 
-static char kConnectKey, kShareKey, kTrimmerKey, kQueueKey, kLyricsGlyphKey;
+static char kConnectKey, kShareKey, kTrimmerKey, kQueueKey, kLyricsGlyphKey, kSingalongKey;
 static __weak SGRGlyphButton *sg_lyricsGlyph;
 
 // The view the footer's stack view arranges around `view`.
@@ -119,6 +120,20 @@ static UIView *connectGlyphIn(UIView *holder) {
     lyrics.center = CGPointMake(round(width * (rtl ? kTrailing : kLeading)), middleY);
     SGRPlayerLyricsChanged();
 
+    SGRGlyphButton *singalong = objc_getAssociatedObject(host, &kSingalongKey);
+    if (!singalong) {
+        singalong = [SGRGlyphButton buttonWithSymbol:@"mic" pointSize:kLyricsGlyphSize title:@"Sing along — reduce vocals"];
+        singalong.glyph.tintColor = SGRSecondary();
+        // Verified in the user's Spotify 9.1.78 binary. Spotify owns eligibility, vocal volume,
+        // audio routing and the entire SingAlong flow; this merely restores its entry point.
+        singalong.onTap = ^{ SGOpenSpotifyURI([NSURL URLWithString:@"spotify:lyrics:fullscreen:vocalremoval"]); };
+        objc_setAssociatedObject(host, &kSingalongKey, singalong, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (singalong.superview != host) [host addSubview:singalong];
+    singalong.bounds = CGRectMake(0, 0, 44, 44);
+    singalong.center = CGPointMake(round(width * (rtl ? 1 - kSingalong : kSingalong)), middleY);
+    singalong.enabled = SGLinkDispatcher() != nil;
+
     UIView *connect = SGRFindByIdentifier(host, @"Components.ConnectButtonOutputSwitcher", &kConnectKey);
     UIView *glyph = connectGlyphIn(connect);
     for (UIView *view = glyph.superview; view && view != connect; view = view.superview) {
@@ -127,7 +142,7 @@ static UIView *connectGlyphIn(UIView *holder) {
         }
     }
     UIView *pinned = glyph ?: connect;
-    CGFloat connectFrom = moveTo(arrangedAround(connect, host), pinned, CGPointMake(CGRectGetMidX(pinned.bounds), CGRectGetMidY(pinned.bounds)), host, round(width * kMiddle));
+    CGFloat connectFrom = moveTo(arrangedAround(connect, host), pinned, CGPointMake(CGRectGetMidX(pinned.bounds), CGRectGetMidY(pinned.bounds)), host, round(width * (rtl ? 1 - kMiddle : kMiddle)));
 
     UIView *queue = SGRFindByIdentifier(host, @"QueueButtonNowPlaying", &kQueueKey);
     CGFloat queueFrom = moveTo(arrangedAround(queue, host), queue, CGPointMake(CGRectGetMidX(queue.bounds), CGRectGetMidY(queue.bounds)), host, round(width * (rtl ? kLeading : kTrailing)));

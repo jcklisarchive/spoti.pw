@@ -5,6 +5,8 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/Player/PlayerEvents.h"
 #import "Redesigned/Haptics/Haptics.h"
+#import "Redesigned/Kit/SGRBridges.h"
+#import "SGRLyricsRendering.h"
 
 static const CGFloat kFontSize = 30, kMargin = 24, kLineGap = 24, kRowTighten = 2;
 static const CGFloat kDimAlpha = 0.3, kFillEdge = 22, kLift = 2.5, kDimScale = 0.97;
@@ -385,6 +387,8 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
     UIScrollView *_scroll;
     BOOL _browsing;
     CADisplayLink *_link;
+    NSTimer *_refresh;
+    CFTimeInterval _motionUntil;
     NSString *_track;
     NSArray<SGKaraokeLine *> *_lines;
     // The song is placed from its lines' heights alone; views exist for the lines in and near sight.
@@ -441,10 +445,16 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionEndedNotification object:nil];
+    for (NSString *name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
+                            NSProcessInfoPowerStateDidChangeNotification, NSProcessInfoThermalStateDidChangeNotification]) {
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(activityChanged:) name:name object:nil];
+    }
     return self;
 }
 
 - (void)dealloc {
+    [_link invalidate];
+    [_refresh invalidate];
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
@@ -467,6 +477,7 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     _browsing = YES;
     for (SGRKaraokeLineView *view in _shown.allValues) view.blur = 0;
+    [self refreshPlayback];
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView {
@@ -485,6 +496,8 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     if (!_browsing) return;
     _browsing = NO;
+    _motionUntil = CACurrentMediaTime() + 1;
+    [self refreshPlayback];
     [UIView animateWithDuration:0.7 delay:0 usingSpringWithDamping:0.9 initialSpringVelocity:0
                         options:UIViewAnimationOptionAllowUserInteraction
                      animations:^{ self->_scroll.contentOffset = CGPointZero; } completion:nil];
@@ -497,15 +510,62 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
         _browsing = NO;
     }
-    [self scheduleLink];
+    [self activityChanged:nil];
 }
 
-// The player opens and closes in animations that run at 120 Hz, and while a display link asked
-// for 30 to 60, the range Apple's ProMotion guide says Core Animation gives priority to, those
-// animations ran rough; the player and the lyrics themselves were smooth throughout. The card's
-// link now asks for 60 but takes 120, and is put down for as long as the player animates, which
-// NowPlayingBar.x announces as each animation starts and again as it ends. The timer is for an end
-// that is never announced.
+// Poll availability/visibility at 2 Hz; animate only visible, moving lyrics. The timer captures
+// weakly so an attached but abandoned page cannot be kept alive by the run loop.
+- (void)activityChanged:(NSNotification *)note {
+    [_refresh invalidate];
+    _refresh = nil;
+    if (!self.window || [note.name isEqualToString:UIApplicationWillResignActiveNotification] ||
+        UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startLink) object:nil];
+        [_link invalidate]; _link = nil;
+        return;
+    }
+    __weak SGRKaraokeView *weakSelf = self;
+    _refresh = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) { [weakSelf refreshPlayback]; }];
+    _refresh.tolerance = 0.1;
+    [NSRunLoop.mainRunLoop addTimer:_refresh forMode:NSRunLoopCommonModes];
+    [self refreshPlayback];
+}
+
+- (BOOL)visibleForPlayback {
+    if (!self.window || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
+    if (self.window.windowScene.activationState != UISceneActivationStateForegroundActive) return NO;
+    // Ignore self.hidden: it is also how a page still waiting for lyrics represents itself.
+    for (UIView *view = self.superview; view; view = view.superview) {
+        if (view.hidden || view.alpha < 0.01) return NO;
+    }
+    for (UIResponder *responder = self; responder; responder = responder.nextResponder) {
+        if (![responder isKindOfClass:UIViewController.class]) continue;
+        UIViewController *presented = ((UIViewController *)responder).presentedViewController;
+        if (presented && !presented.isBeingDismissed) return NO;
+    }
+    return CGRectIntersectsRect([self convertRect:self.bounds toView:self.window], self.window.bounds);
+}
+
+- (int)renderingRate {
+    BOOL constrained = NSProcessInfo.processInfo.lowPowerModeEnabled ||
+        NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateSerious;
+    SPTPlayerState *state = SGRPlayerState();
+    return SGRLyricsFrameRate(UIApplication.sharedApplication.applicationState == UIApplicationStateActive,
+        [self visibleForPlayback], _tops != nil, state && state.isPlaying && !state.isPaused,
+        _scroll.dragging || _scroll.decelerating || CACurrentMediaTime() < _motionUntil, constrained);
+}
+
+- (void)refreshPlayback {
+    if (![self visibleForPlayback]) { [_link invalidate]; _link = nil; return; }
+    if (!_link) [self tick];
+    int rate = [self renderingRate];
+    if (!rate) { [_link invalidate]; _link = nil; return; }
+    if (!_link) [self scheduleLink];
+    if (_link) _link.preferredFrameRateRange = CAFrameRateRangeMake(rate, rate, rate);
+}
+
+// Keep the link stopped during player transitions so a 60 Hz lyrics view does not cap the
+// player's 120 Hz opening/closing animation.
 - (void)scheduleLink {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startLink) object:nil];
     [_link invalidate];
@@ -517,9 +577,10 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
 }
 
 - (void)startLink {
-    if (!self.window || _link) return;
+    int rate = [self renderingRate];
+    if (!rate || _link) return;
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
-    _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+    _link.preferredFrameRateRange = CAFrameRateRangeMake(rate, rate, rate);
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 
@@ -717,7 +778,7 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
 // corrections. A seek or a new track is too far off to ease and is taken at once.
 - (double)clockMs {
     NSInteger raw = SGKaraokePositionMs();
-    CFTimeInterval shown = _link.targetTimestamp;
+    CFTimeInterval shown = _link ? _link.targetTimestamp : CACurrentMediaTime();
     BOOL running = raw != _reported;   // a paused player reports the same position every frame
     double reported = raw + (running ? (shown - CACurrentMediaTime()) * 1000 : 0);
     double predicted = _clock + (running ? (shown - _clockTime) * 1000 : 0);

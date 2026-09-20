@@ -3,7 +3,7 @@
 ## Build on GitHub
 
 Run **Build IPA from your own Spotify IPA** on `main`, using a decrypted Spotify 9.1.78 IPA URL.
-Choose `artifacts` and enable **Include FLEX for on-device view-tree capture** for this test build.
+Choose `artifacts` and leave **Include FLEX for on-device view-tree capture** unchecked.
 The **Test lyrics** step runs the checks below on the Mac runner before packaging. If it fails,
 send the failed step's log. Otherwise download the `spoti.ipa` artifact, extract its IPA and sideload it.
 
@@ -31,31 +31,25 @@ Device checks on Spotify 9.1.78:
 Generated pronunciation is approximate. Ambiguous Japanese tokens are left original if Apple's
 tokenizer cannot identify a Japanese reading; it must never silently supply a Chinese reading.
 
-Native Spotify card/full-screen row integration remains pending a view-tree capture from the
-target device. Record the native player, full-screen lyrics, profile drawer and settings root with
-`python3 scripts/record-trees.py` from a FLEX-enabled build. The private row classes and sizing
-selectors must be verified before adding hooks, as required by `AGENTS.md`.
+Native Spotify bilingual lyrics are outside scope. No FLEX logs, USB capture or Mac are required
+for the phone tests; GitHub runs the Apple-runtime checks.
 
-## Capture the native screens
+## Heat and SingAlong regression checks
 
-Turn **Redesigned UI** off in Mod Settings → Appearance, then restart Spotify. On a Mac with the
-repo checked out, install the USB tools once with `brew install libimobiledevice libusbmuxd`.
-Connect your unlocked iPhone by USB and accept Trust. From the repo root run:
+1. Build without FLEX. Compare 10–15 minutes of playback with the prior build under the same
+   brightness, connection and charging conditions. Note the iPhone/iOS version and battery drop.
+2. Test Home with lyrics closed, visible redesigned lyrics, and locked playback in the car.
+   Check that artist-replacement lyrics still advance, pause and seek correctly.
+3. Pause while lyrics are visible, scroll them, resume, then repeatedly open/close the player.
+   Lyrics should resume smoothly; opening/closing animations should retain ProMotion smoothness.
+4. Turn Low Power Mode on and off while viewing lyrics. Expect reduced animation rate while on.
+5. Tap the new microphone next to Lyrics in the redesigned player's footer on a track where your
+   Japanese account has SingAlong. It opens Spotify's existing vocal-reduction screen and controls.
+   Adjust vocals, dismiss it and confirm ordinary playback and redesigned lyrics still work.
+6. Confirm the other footer buttons still open Lyrics, Connect and Queue, including landscape.
 
-Save any older files from `trees/continuous/` first: continuous capture clears that folder's text files.
+The microphone opens Spotify's own SingAlong UI; it does not replace that UI's lyrics or spoof
+account/track eligibility. Its URI was verified in the user's Spotify 9.1.78 build.
 
-```sh
-python3 scripts/record-trees.py -C
-```
-
-Keep Spotify in the foreground. Open each screen below, then press Enter in the terminal to capture it:
-
-1. The native player scrolled to a visible lyrics card, while a Japanese or Chinese track is playing.
-2. That track's full-screen lyrics.
-3. The profile drawer showing Mod Settings and adjacent options.
-4. Spotify's settings root showing the Mod Settings row.
-
-Exit with `q`. Send the four files from `trees/continuous/`, noting which number is which screen.
-Also include the Spotify/iOS versions, track links, and screenshots or a short recording of any
-alignment, timing or pronunciation problem. You can start with screenshots if USB capture is
-not available; the native row hooks will still need the text captures to finish.
+`cc harness/lyrics/rendering.c -o /tmp/spoti-rendering-check && /tmp/spoti-rendering-check`
+runs the rendering-rate regression checks on Linux as well as macOS.

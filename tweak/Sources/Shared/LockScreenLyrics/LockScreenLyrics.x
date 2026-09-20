@@ -49,6 +49,25 @@ static NSArray<NSArray<SGKaraokeWord *> *> *piecesOf(SGKaraokeLine *line) {
     return pieces;
 }
 
+// This used to split the same lyric and rebuild its strings on every 250ms poll, including
+// locked playback. Keep only the current line; a new pronunciation snapshot naturally replaces it.
+static SGKaraokeLine *sg_pieceLine;
+static NSArray<NSArray<SGKaraokeWord *> *> *sg_pieces;
+static NSArray<NSString *> *sg_pieceTexts;
+
+static NSString *pieceAt(SGKaraokeLine *line, NSInteger position) {
+    if (line != sg_pieceLine) {
+        sg_pieceLine = line;
+        sg_pieces = piecesOf(line);
+        NSMutableArray *texts = [NSMutableArray arrayWithCapacity:sg_pieces.count];
+        for (NSArray *piece in sg_pieces) [texts addObject:textOf(piece)];
+        sg_pieceTexts = texts;
+    }
+    NSInteger index = 0;
+    while (index + 1 < (NSInteger)sg_pieces.count && sg_pieces[index + 1].firstObject.start <= position) index++;
+    return sg_pieceTexts.count ? sg_pieceTexts[index] : nil;
+}
+
 // Seconds into the track at `now`, run on from what Spotify last reported.
 static double elapsedAt(NSDictionary *info, CFAbsoluteTime reportedAt, CFAbsoluteTime now) {
     double rate = [info[MPNowPlayingInfoPropertyPlaybackRate] doubleValue];
@@ -72,11 +91,7 @@ static NSString *lineFor(NSDictionary *info, double elapsed) {
     if (index < 0) return nil;
     BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
     if (position > lines[index].end + kBreakMs && nextFarOff) return nil;
-    NSString *shown = nil;
-    for (NSArray<SGKaraokeWord *> *piece in piecesOf(SGKaraokeDisplayLine(lines[index]))) {
-        if (!shown || piece.firstObject.start <= position) shown = textOf(piece);
-    }
-    return shown;
+    return pieceAt(SGKaraokeDisplayLine(lines[index]), position);
 }
 
 static NSDictionary *withLine(NSDictionary *info, NSString *line, double elapsed) {
@@ -141,6 +156,7 @@ static void tick(void) {
     sg_lock = [NSObject new];
     %init;
     NSTimer *timer = [NSTimer timerWithTimeInterval:kTick repeats:YES block:^(NSTimer *t) { tick(); }];
+    timer.tolerance = 0.05;
     [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
     SGLog(@"lock screen lyrics: on");
 }
