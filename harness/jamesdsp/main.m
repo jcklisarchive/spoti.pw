@@ -297,6 +297,7 @@ static bool setEffect(SGDSPEngine *engine, Effect effect, bool on) {
 
 static void allOn(SGDSPEngine *engine) {
     for (Effect e = 0; e < kEffectCount; e++) {
+        if (e == kConvolver && !sg_church) continue;   // asset-free smoke mode
         if (e == kEqFIR || e == kLiveprogHeavy || e == kCrossfeedBS2B) continue;   // one of each
         setEffect(engine, e, true);
     }
@@ -821,7 +822,7 @@ int main(int argc, const char *argv[]) {
         setvbuf(stdout, NULL, _IOLBF, 0);
         if (argc == 2 && !strcmp(argv[1], "--smoke")) {
             // CI needs no downloaded song or impulse response for the engine's core invariants.
-            Audio tone = makeAudio((size_t)kRate * 2);
+            Audio tone = makeAudio((size_t)kRate * 4);
             for (size_t i = 0; i < tone.frames; i++) {
                 tone.left[i] = 0.2f * sin(2 * M_PI * 220 * i / kRate);
                 tone.right[i] = 0.2f * sin(2 * M_PI * 440 * i / kRate);
