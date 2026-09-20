@@ -43,13 +43,15 @@ for the phone tests; GitHub runs the Apple-runtime checks.
 3. Pause while lyrics are visible, scroll them, resume, then repeatedly open/close the player.
    Lyrics should resume smoothly; opening/closing animations should retain ProMotion smoothness.
 4. Turn Low Power Mode on and off while viewing lyrics. Expect reduced animation rate while on.
-5. Tap the new microphone next to Lyrics in the redesigned player's footer on a track where your
-   Japanese account has SingAlong. It opens Spotify's existing vocal-reduction screen and controls.
-   Adjust vocals, dismiss it and confirm ordinary playback and redesigned lyrics still work.
-6. Confirm the other footer buttons still open Lyrics, Connect and Queue, including landscape.
+5. Confirm the player footer has only Lyrics, Connect and Queue, in their original positions,
+   including landscape. Lyrics must open the inline redesigned lyrics, not a separate page.
+6. Close Lyrics and reopen it; pronunciation and seeking should still work.
 
-The microphone opens Spotify's own SingAlong UI; it does not replace that UI's lyrics or spoof
-account/track eligibility. Its URI was verified in the user's Spotify 9.1.78 build.
+SingAlong vocal reduction is not implemented in the redesigned lyrics view yet. The previous
+microphone was only a navigation shortcut and has been removed. A replacement must invoke
+Spotify's actual vocal-reduction action from inside the lyrics view, preserve account/track
+eligibility, and reflect Spotify's state. Finding a lyrics URL in the binary does not verify that
+action. Device acceptance requires hearing vocals reduce and return without leaving inline lyrics.
 
 `cc harness/lyrics/rendering.c -o /tmp/spoti-rendering-check && /tmp/spoti-rendering-check`
 runs the rendering-rate regression checks on Linux as well as macOS.
