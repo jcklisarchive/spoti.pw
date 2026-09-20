@@ -73,7 +73,7 @@ static NSString *lineFor(NSDictionary *info, double elapsed) {
     BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
     if (position > lines[index].end + kBreakMs && nextFarOff) return nil;
     NSString *shown = nil;
-    for (NSArray<SGKaraokeWord *> *piece in piecesOf(lines[index])) {
+    for (NSArray<SGKaraokeWord *> *piece in piecesOf(SGKaraokeDisplayLine(lines[index]))) {
         if (!shown || piece.firstObject.start <= position) shown = textOf(piece);
     }
     return shown;

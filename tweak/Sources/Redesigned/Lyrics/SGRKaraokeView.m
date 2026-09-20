@@ -13,6 +13,15 @@ static const CGFloat kEdgeFade = 0.1;  // the lines fade out over this share at 
 static const CGFloat kBlurPerLine = 1.4, kMaxBlur = 6;
 // The (oh, aye) hanging under a line: smaller, a little dimmer, and just clear of it.
 static const CGFloat kBackingScale = 0.62, kBackingAlpha = 0.8, kBackingGap = 4;
+static const CGFloat kReadingScale = 0.6, kReadingGap = 4;
+
+static CGFloat readingHeight(SGKaraokeLine *line, CGFloat width, UIFont *font) {
+    if (!SGRomanizedLyricsEnabled() || !line.pronunciation.words.count) return 0;
+    UIFont *smaller = [UIFont systemFontOfSize:round(font.pointSize * kReadingScale) weight:UIFontWeightMedium];
+    return ceil([SGKaraokeLineText(line.pronunciation) boundingRectWithSize:CGSizeMake(width, CGFLOAT_MAX)
+        options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+        attributes:@{NSFontAttributeName: smaller} context:nil].size.height);
+}
 // The line naming the source, under the lyrics and outside the fade so it does not dim with them.
 static const CGFloat kCreditSize = 12, kCreditAlpha = 0.4, kCreditBottom = 10;
 static const NSTimeInterval kBrowseHold = 3;   // after scrolling by hand, how long until it follows the song again
@@ -129,6 +138,7 @@ typedef struct {
     SGSweepKnot *_knots;
     NSUInteger _knotCount;
     SGRKaraokeLineView *_backing;
+    UILabel *_reading;
 }
 
 - (instancetype)initWithLine:(SGKaraokeLine *)line width:(CGFloat)width font:(UIFont *)font backing:(BOOL)backing blurred:(BOOL)blurred {
@@ -172,12 +182,29 @@ typedef struct {
     _words = words;
 
     CGFloat height = y + ceil(font.lineHeight);
+    CGFloat pronunciationHeight = readingHeight(line, width, font);
+    if (pronunciationHeight > 0) {
+        _reading = [UILabel new];
+        _reading.text = SGKaraokeLineText(line.pronunciation);
+        _reading.font = [UIFont systemFontOfSize:round(font.pointSize * kReadingScale) weight:UIFontWeightMedium];
+        _reading.textColor = UIColor.whiteColor;
+        _reading.alpha = kDimAlpha;
+        _reading.numberOfLines = 0;
+        _reading.textAlignment = line.align == SGKaraokeAlignTrailing ? NSTextAlignmentRight : NSTextAlignmentLeft;
+        _reading.frame = CGRectMake(0, height + kReadingGap, width, pronunciationHeight);
+        [self addSubview:_reading];
+        height = CGRectGetMaxY(_reading.frame);
+    }
+    self.isAccessibilityElement = YES;
+    self.accessibilityTraits = UIAccessibilityTraitButton;
+    self.accessibilityLabel = _reading ? [NSString stringWithFormat:@"%@, %@", SGKaraokeLineText(line), _reading.text] : SGKaraokeLineText(line);
     if (line.backing.words.count && !backing) {
         UIFont *smaller = [UIFont systemFontOfSize:round(font.pointSize * kBackingScale) weight:UIFontWeightBold];
         _backing = [[SGRKaraokeLineView alloc] initWithLine:line.backing width:width font:smaller backing:YES blurred:NO];
         _backing.alpha = kBackingAlpha;
         _backing.frame = CGRectMake(0, height + kBackingGap, width, _backing.bounds.size.height);
         [self addSubview:_backing];
+        self.accessibilityLabel = [self.accessibilityLabel stringByAppendingFormat:@", %@", _backing.accessibilityLabel];
         height = CGRectGetMaxY(_backing.frame);
     }
     self.frame = CGRectMake(0, 0, width, height);
@@ -190,6 +217,11 @@ typedef struct {
     CAFilter *blur = [NSClassFromString(@"CAFilter") filterWithType:@"gaussianBlur"];
     if (blur) self.layer.filters = @[blur];
     return self;
+}
+
+- (BOOL)accessibilityActivate {
+    SGKaraokeSeek(self.line.start);
+    return YES;
 }
 
 // The height a line takes at a width, its rows counted the way initWithLine:width:font:backing:blurred:
@@ -207,6 +239,8 @@ static CGFloat lineHeight(SGKaraokeLine *line, CGFloat width, UIFont *font, BOOL
         x += lead + wordWidth;
     }
     CGFloat height = y + ceil(font.lineHeight);
+    CGFloat pronunciationHeight = readingHeight(line, width, font);
+    if (pronunciationHeight > 0) height += kReadingGap + pronunciationHeight;
     if (line.backing.words.count && !backing) {
         UIFont *smaller = [UIFont systemFontOfSize:round(font.pointSize * kBackingScale) weight:UIFontWeightBold];
         height += kBackingGap + lineHeight(line.backing, width, smaller, YES);
@@ -298,6 +332,7 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
 - (void)setActive:(BOOL)active {
     if (active == _active) return;
     _active = active;
+    _reading.alpha = active ? 0.85 : kDimAlpha;
     _backing.active = active;
     NSUInteger generation = ++_generation;
     if (active) {
@@ -703,7 +738,10 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
         [self creditTo:nil];
         [self dropLineViews];
     }
-    if (!_lines && track && (_lines = SGKaraokeLinesForTrack(track))) {
+    NSArray<SGKaraokeLine *> *latest = SGKaraokeLinesForTrack(track);
+    if (latest && latest != _lines) {
+        _lines = latest;
+        [self rebuild];
         SGLog(@"karaoke: showing %lu lines of %@", (unsigned long)_lines.count, track);
         [self setNeedsLayout];
     }

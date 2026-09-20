@@ -3,7 +3,10 @@
 // times whole lines, so the words inside a line are timed by an estimate (KaraokeTiming.m), unless a
 // source of the mod's times them. The lines are read from the color-lyrics response as it arrives, or
 // handed over by Shared/LyricsSources, and the position from the player's state (KaraokeSource.x).
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+
+#define SGKeyRomanizedLyrics @"spotifyglass.romanizedLyrics"
+BOOL SGRomanizedLyricsEnabled(void);
 
 @class SGModRow, SGModSection;
 // LyricsSettings.m: the Lyrics page's parts (App/Pages.m puts the page together): where lyrics come
@@ -37,7 +40,17 @@ typedef NS_ENUM(NSUInteger, SGKaraokeAlign) {
 // The (oh, aye) sung under the line, smaller and dimmer, nil for nearly every line. Its words are
 // timed like any other and it is lit by the same sweep, a beat behind the line it hangs off.
 @property (nonatomic, strong) SGKaraokeLine *backing;
+// Separate from the source words: a pronunciation must never change the original lyric or timing.
+@property (nonatomic, copy) NSString *language;
+@property (nonatomic, strong) SGKaraokeLine *pronunciation;
 @end
+
+// Returns a new snapshot; call off the main thread, then publish on the main queue.
+NSArray<SGKaraokeLine *> *SGRomanizedLines(NSArray<SGKaraokeLine *> *lines);
+NSString *SGRomanizeText(NSString *text, NSString *language);
+SGKaraokeLine *SGPronunciationLine(NSString *text, NSInteger start, NSInteger end);
+SGKaraokeLine *SGKaraokeDisplayLine(SGKaraokeLine *line);
+NSString *SGKaraokeDisplayText(SGKaraokeLine *line);
 
 // The line as one string, a space between the words that are not joined.
 NSString *SGKaraokeLineText(SGKaraokeLine *line);

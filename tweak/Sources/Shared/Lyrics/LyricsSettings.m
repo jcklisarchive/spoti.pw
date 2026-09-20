@@ -15,6 +15,7 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         return names.count ? [names componentsJoinedByString:@", "] : @"Off";
     };
     NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources,
+        SGOptionRow(@"Romanized lyrics", @"Japanese romaji, Mandarin pinyin and Korean readings; generated readings may be approximate. Restart to apply.", SGKeyRomanizedLyrics),
         SGOptionRow(@"Lyrics for every track", @"Offers the lyrics card on tracks Spotify has no lyrics for; needs a source above", SGKeyLyricsAllTracks), nil];
     if (namingSource) [rows addObject:SGOptionRow(@"Name the source", @"Reads out which source the lines on the full screen page came from", SGKeyLyricsCredit)];
     return SGNotedSection(@"Where lyrics come from", rows, @"With no source on, Spotify's own lyrics are left alone.");

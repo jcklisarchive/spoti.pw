@@ -23,7 +23,7 @@
 #import "Pages.h"
 
 static const CGFloat kRowHeight = 56;
-static char kRowKey, kInsetKey;
+static char kRowKey, kInsetKey, kAddedHeightKey;
 
 static SGModRow *pageRow(NSString *title, NSString *symbol, UIViewController *(^page)(void)) {
     return SGWithSymbol(SGPageRow(title, page), symbol);
@@ -70,15 +70,19 @@ static UIViewController *modSettingsPage(void) {
 #pragma mark - row in the settings list and the side drawer
 
 // The last row of Spotify's settings list, chevron and all, or the first of the side drawer's,
-// drawn like the drawer's own rows: no chevron, icon and title 4pt further in.
+// measured against an ordinary visible cell in that particular list.
 @interface SGModSettingsRow : UIControl
 @property (nonatomic) BOOL drawer;
+@property (nonatomic) CGFloat rowHeight;
+- (void)matchList:(UICollectionView *)list;
 @end
 
 @implementation SGModSettingsRow {
     UIImageView *_icon;
     UILabel *_title;
     UIImageView *_chevron;
+    CGRect _titleSlot, _iconSlot;
+    BOOL _matched;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -87,18 +91,74 @@ static UIViewController *modSettingsPage(void) {
     _title = [UILabel new];
     _title.text = @"Mod Settings";
     _title.textColor = UIColor.whiteColor;
+    self.rowHeight = kRowHeight;
+    self.isAccessibilityElement = YES;
+    self.accessibilityLabel = @"Mod Settings";
+    self.accessibilityTraits = UIAccessibilityTraitButton;
     _chevron = SGSymbolView(@"chevron.right", 11, UIImageSymbolWeightSemibold, 12);
     for (UIView *v in @[_icon, _title, _chevron]) [self addSubview:v];
     [self addTarget:self action:@selector(open) forControlEvents:UIControlEventTouchUpInside];
     return self;
 }
 
+- (void)matchList:(UICollectionView *)list {
+    NSArray *cells = [list.visibleCells sortedArrayUsingComparator:^NSComparisonResult(UICollectionViewCell *a, UICollectionViewCell *b) {
+        return [@(a.frame.origin.y) compare:@(b.frame.origin.y)];
+    }];
+    for (UICollectionViewCell *cell in cells) {
+        if (cell.bounds.size.height < 40 || cell.bounds.size.height > 100) continue;
+        __block UILabel *title = nil;
+        SGForEachView(cell.contentView, ^(UIView *view) {
+            if (![view isKindOfClass:UILabel.class] || view.hidden || view.alpha < 0.01) return;
+            UILabel *label = (UILabel *)view;
+            if (label.text.length && (!title || label.font.pointSize > title.font.pointSize)) title = label;
+        });
+        if (!title) continue;
+        CGRect titleFrame = [title convertRect:title.bounds toView:list];
+        __block UIView *icon = nil;
+        SGForEachView(cell.contentView, ^(UIView *view) {
+            if (view.hidden || view.alpha < 0.01) return;
+            BOOL glyph = [view isKindOfClass:UIImageView.class] || [NSStringFromClass(view.class) containsString:@"IconView"];
+            CGRect frame = [view convertRect:view.bounds toView:list];
+            if (glyph && frame.size.width >= 12 && frame.size.width <= 36 && frame.size.height >= 12 &&
+                frame.size.height <= 36 && CGRectGetMaxX(frame) <= CGRectGetMinX(titleFrame)) {
+                if (!icon || view.bounds.size.width > icon.bounds.size.width) icon = view;
+            }
+        });
+        if (!icon) continue;
+        CGRect cellFrame = [cell convertRect:cell.bounds toView:list];
+        _titleSlot = CGRectOffset(titleFrame, -list.bounds.origin.x, -cellFrame.origin.y);
+        _iconSlot = CGRectOffset([icon convertRect:icon.bounds toView:list], -list.bounds.origin.x, -cellFrame.origin.y);
+        self.rowHeight = cell.bounds.size.height;
+        UIFont *font = title.font;
+        UIColor *color = title.textColor;
+        if (title.attributedText.length) {
+            font = [title.attributedText attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL] ?: font;
+            color = [title.attributedText attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL] ?: color;
+        }
+        _title.font = font;
+        _title.textColor = color;
+        _icon.tintColor = icon.tintColor;
+        CGFloat size = MIN(_iconSlot.size.width, _iconSlot.size.height);
+        _icon.image = [UIImage systemImageNamed:@"slider.horizontal.3" withConfiguration:
+            [UIImageSymbolConfiguration configurationWithPointSize:size weight:UIImageSymbolWeightRegular]];
+        _matched = YES;
+        [self setNeedsLayout];
+        return;
+    }
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
-    _title.font = SGTitleFont();
+    if (!_matched) _title.font = SGTitleFont();
     CGFloat width = self.bounds.size.width, height = self.bounds.size.height, lead = self.drawer ? 4 : 0;
     _icon.frame = CGRectMake(12 + lead, (height - 24) / 2, 24, 24);
     _title.frame = CGRectMake(48 + lead, 0, width - 96, height);
+    if (_matched) {
+        _icon.frame = _iconSlot;
+        _title.frame = CGRectMake(_titleSlot.origin.x, _titleSlot.origin.y,
+            MAX(0, width - _titleSlot.origin.x - (self.drawer ? 16 : 36)), _titleSlot.size.height);
+    }
     _chevron.frame = CGRectMake(width - 24, (height - 12) / 2, 12, 12);
     _chevron.hidden = self.drawer;
 }
@@ -150,18 +210,26 @@ void SGOpenModSettings(UIView *source) {
 // At the end of the settings list, or above the first row of the drawer's, with the inset for it
 // added again whenever Spotify resets the inset.
 static void placeRow(UICollectionView *list, SGModSettingsRow *row) {
-    SGAdoptFonts(list, row);
+    if (!row.drawer) SGAdoptFonts(list, row);
+    [row matchList:list];
     CGFloat bottom = list.contentSize.height;
+    CGFloat height = row.rowHeight;
     row.hidden = !row.drawer && bottom <= 0;
-    row.frame = CGRectMake(0, row.drawer ? -kRowHeight : bottom, list.bounds.size.width, kRowHeight);
+    row.frame = CGRectMake(0, row.drawer ? -height : bottom, list.bounds.size.width, height);
 
     UIEdgeInsets inset = list.contentInset;
     NSValue *applied = objc_getAssociatedObject(list, &kInsetKey);
-    if (applied && UIEdgeInsetsEqualToEdgeInsets(inset, applied.UIEdgeInsetsValue)) return;
-    if (row.drawer) inset.top += kRowHeight;
-    else inset.bottom += kRowHeight;
+    CGFloat previous = [objc_getAssociatedObject(list, &kAddedHeightKey) doubleValue];
+    UIEdgeInsets last = applied ? applied.UIEdgeInsetsValue : UIEdgeInsetsZero;
+    if (applied && (row.drawer ? inset.top == last.top : inset.bottom == last.bottom)) {
+        if (row.drawer) inset.top -= previous;
+        else inset.bottom -= previous;
+    }
+    if (row.drawer) inset.top += height;
+    else inset.bottom += height;
     objc_setAssociatedObject(list, &kInsetKey, [NSValue valueWithUIEdgeInsets:inset], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    list.contentInset = inset;
+    objc_setAssociatedObject(list, &kAddedHeightKey, @(height), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!UIEdgeInsetsEqualToEdgeInsets(list.contentInset, inset)) list.contentInset = inset;
 }
 
 // Media quality, Playback, Account and most of the rest of settings are the same controller class
@@ -199,6 +267,15 @@ static BOOL isSettingsRoot(UIViewController *list) {
         // A page that laid itself out before it was on the stack looked like the list for as long
         // as that took; the row goes again as soon as it can be seen for what it is.
         if (!root) {
+            UICollectionView *list = (UICollectionView *)sub;
+            NSValue *applied = objc_getAssociatedObject(list, &kInsetKey);
+            if (applied && list.contentInset.bottom == applied.UIEdgeInsetsValue.bottom) {
+                UIEdgeInsets inset = list.contentInset;
+                inset.bottom -= [objc_getAssociatedObject(list, &kAddedHeightKey) doubleValue];
+                list.contentInset = inset;
+            }
+            objc_setAssociatedObject(list, &kInsetKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(list, &kAddedHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [row removeFromSuperview];
             objc_setAssociatedObject(sub, &kRowKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             continue;

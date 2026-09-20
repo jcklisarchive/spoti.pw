@@ -38,6 +38,8 @@ static NSInteger msOfClock(NSString *clock) {
 @interface SGTTMLContainer : NSObject
 @property (nonatomic, strong) NSMutableArray<SGKaraokeWord *> *words;
 @property (nonatomic) BOOL spaced;   // whitespace has gone by, so the next word is not joined
+@property (nonatomic, strong) NSMutableString *roman;
+@property (nonatomic, strong) NSMutableArray<SGKaraokeWord *> *romanWords;
 @end
 
 @implementation SGTTMLContainer
@@ -45,6 +47,8 @@ static NSInteger msOfClock(NSString *clock) {
     if (!(self = [super init])) return nil;
     _words = [NSMutableArray array];
     _spaced = YES;
+    _roman = [NSMutableString string];
+    _romanWords = [NSMutableArray array];
     return self;
 }
 @end
@@ -62,12 +66,19 @@ static NSInteger msOfClock(NSString *clock) {
     NSMutableString *_word;                      // the characters of the span being read
     NSInteger _wordStart, _wordEnd;
     NSUInteger _spanDepth, _bgDepth, _wordDepth;
+    NSUInteger _annotationDepth, _readingDepth;
+    BOOL _romanAnnotation;
+    SGKaraokeWord *_readingWord;
+    NSMutableString *_readingText;
+    NSMutableArray<NSString *> *_languages;
+    NSString *_lineLanguage;
 }
 
 - (instancetype)init {
     if (!(self = [super init])) return nil;
     _lines = [NSMutableArray array];
     _stack = [NSMutableArray array];
+    _languages = [NSMutableArray array];
     return self;
 }
 
@@ -77,12 +88,16 @@ static NSInteger msOfClock(NSString *clock) {
 
 - (void)parser:(NSXMLParser *)parser didStartElement:(NSString *)element namespaceURI:(NSString *)uri
  qualifiedName:(NSString *)qualified attributes:(NSDictionary<NSString *, NSString *> *)attributes {
+    [_languages addObject:attributes[@"xml:lang"] ?: _languages.lastObject ?: @""];
     if ([element isEqualToString:@"p"]) {
         [_stack removeAllObjects];
         [_stack addObject:[SGTTMLContainer new]];
         _backing = nil;
         _word = nil;
         _spanDepth = _bgDepth = _wordDepth = 0;
+        _annotationDepth = _readingDepth = 0;
+        _readingWord = nil;
+        _lineLanguage = _languages.lastObject;
         _plain = [NSMutableString string];
         _lineStart = msOfClock(attributes[@"begin"]);
         _lineEnd = msOfClock(attributes[@"end"]);
@@ -91,15 +106,32 @@ static NSInteger msOfClock(NSString *clock) {
     }
     if (![element isEqualToString:@"span"] || !_stack.count) return;
     _spanDepth++;
+    if (_annotationDepth) {
+        NSInteger start = msOfClock(attributes[@"begin"]), end = msOfClock(attributes[@"end"]);
+        if (_romanAnnotation && !_readingWord && start >= 0 && end >= start) {
+            _readingWord = [SGKaraokeWord new];
+            _readingWord.start = start; _readingWord.end = end;
+            _readingText = [NSMutableString string];
+            _readingDepth = _spanDepth;
+        }
+        return;
+    }
     NSString *role = attributes[@"ttm:role"] ?: attributes[@"role"];
+    NSString *ruby = attributes[@"tts:ruby"] ?: attributes[@"ruby"];
+    if ([role isEqualToString:@"x-roman"] || [role isEqualToString:@"x-translation"] ||
+        [ruby isEqualToString:@"text"] || [ruby isEqualToString:@"textContainer"] || [ruby isEqualToString:@"delimiter"]) {
+        _annotationDepth = _spanDepth;
+        // A word's ruby annotation is not a reading of the entire line.
+        _romanAnnotation = [role isEqualToString:@"x-roman"] && !_word;
+        return;
+    }
     if ([role isEqualToString:@"x-bg"] && !_backing) {
         _backing = [SGTTMLContainer new];
         [_stack addObject:_backing];
         _bgDepth = _spanDepth;
         return;
     }
-    // A span nested inside one that is already being read is ruby or a translation: its characters
-    // belong to the word around it rather than making a word of their own.
+    // Ordinary nested styling remains part of the word; annotations were separated above.
     if (_word) return;
     NSInteger start = msOfClock(attributes[@"begin"]), end = msOfClock(attributes[@"end"]);
     if (start < 0) return;
@@ -111,7 +143,12 @@ static NSInteger msOfClock(NSString *clock) {
 
 - (void)parser:(NSXMLParser *)parser foundCharacters:(NSString *)characters {
     if (!_stack.count) return;
-    [_plain appendString:characters];
+    if (_annotationDepth) {
+        if (_romanAnnotation) [self.top.roman appendString:characters];
+        if (_readingWord) [_readingText appendString:characters];
+        return;
+    }
+    if (self.top == _stack.firstObject) [_plain appendString:characters];
     if (_word) {
         [_word appendString:characters];
         return;
@@ -123,12 +160,23 @@ static NSInteger msOfClock(NSString *clock) {
 
 - (void)parser:(NSXMLParser *)parser didEndElement:(NSString *)element namespaceURI:(NSString *)uri
  qualifiedName:(NSString *)qualified {
+    if (_languages.count) [_languages removeLastObject];
     if ([element isEqualToString:@"p"]) {
         [self finishLine];
         [_stack removeAllObjects];
         return;
     }
     if (![element isEqualToString:@"span"] || !_stack.count) return;
+    if (_annotationDepth) {
+        if (_readingWord && _readingDepth == _spanDepth) {
+            _readingWord.text = [_readingText stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (_readingWord.text.length) [self.top.romanWords addObject:_readingWord];
+            _readingWord = nil;
+        }
+        if (_spanDepth == _annotationDepth) _annotationDepth = 0;
+        _spanDepth--;
+        return;
+    }
     if (_word && _spanDepth == _wordDepth) {
         NSString *text = [_word stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         SGTTMLContainer *into = self.top;
@@ -174,8 +222,27 @@ static NSInteger msOfClock(NSString *clock) {
     if (_lineStart >= 0) line.start = _lineStart;
     if (_lineEnd > line.start) line.end = _lineEnd;
     line.voice = _voice;
+    line.language = _lineLanguage.length ? _lineLanguage : nil;
     line.backing = [self lineFrom:_backing.words];
+    line.backing.language = line.language;
+    [self addReading:main to:line];
+    if (line.backing) [self addReading:_backing to:line.backing];
     [_lines addObject:line];
+}
+
+- (void)addReading:(SGTTMLContainer *)container to:(SGKaraokeLine *)line {
+    NSString *text = [container.roman stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    line.pronunciation = SGPronunciationLine(text, line.start, line.end);
+    SGKaraokeLine *timed = [self lineFrom:container.romanWords];
+    NSString *plain = [[text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] componentsJoinedByString:@""];
+    NSString *timedText = [[SGKaraokeLineText(timed) componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] componentsJoinedByString:@""];
+    BOOL validTiming = timed != nil;
+    NSInteger previous = line.start;
+    for (SGKaraokeWord *word in timed.words) {
+        if (word.start < previous || word.end < word.start || word.end > line.end) validTiming = NO;
+        previous = word.start;
+    }
+    if (validTiming && [plain isEqualToString:timedText]) line.pronunciation = timed;
 }
 
 @end
@@ -190,7 +257,7 @@ NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml) {
     // The TTML namespaces carry nothing the reader needs, and the prefixes it matches on
     // ("ttm:agent") only survive while they are left alone.
     parser.shouldProcessNamespaces = NO;
-    [parser parse];
+    if (![parser parse]) return nil;
     if (!reader.lines.count) return nil;
     SGKaraokeAlignVoices(reader.lines);
     return reader.lines;

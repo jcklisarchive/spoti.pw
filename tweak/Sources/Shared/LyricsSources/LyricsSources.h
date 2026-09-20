@@ -5,7 +5,8 @@
 //
 // SGTTML.m reads the TTML that Apple Music's own lyrics are written in, which is what BiniLyrics and
 // Unison serve; it is the only shape carrying a second voice and the (oh, aye) sung under a line.
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+@class UIViewController;
 #import "Shared/Lyrics/Lyrics.h"
 
 // The sources in the order they are asked, as their keys. Unset means the order below, so a source

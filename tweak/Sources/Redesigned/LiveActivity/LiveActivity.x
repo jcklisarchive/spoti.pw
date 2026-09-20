@@ -100,11 +100,11 @@ static NSString *lyricsLine(NSString *trackID, NSString **next) {
     NSInteger position = SGKaraokePositionMs();
     NSInteger index = -1;
     while (index + 1 < (NSInteger)lines.count && lines[index + 1].start <= position) index++;
-    *next = index + 1 < (NSInteger)lines.count ? SGKaraokeLineText(lines[index + 1]) : @"";
+    *next = index + 1 < (NSInteger)lines.count ? SGKaraokeDisplayText(lines[index + 1]) : @"";
     if (index < 0) return @"♪";
     SGKaraokeLine *current = lines[index];
     BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
-    return position > current.end + kBreakMs && nextFarOff ? @"♪" : SGKaraokeLineText(current);
+    return position > current.end + kBreakMs && nextFarOff ? @"♪" : SGKaraokeDisplayText(current);
 }
 
 static void clearSleepTimer(void) {

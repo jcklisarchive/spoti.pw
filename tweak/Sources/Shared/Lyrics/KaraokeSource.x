@@ -16,6 +16,7 @@ static const NSUInteger kSeenTracks = 200;
 static NSString *const kSpclientHeaders[] = {@"authorization", @"client-token", @"app-platform", @"spotify-app-version", @"user-agent", @"accept-language"};
 
 static NSMutableDictionary<NSString *, NSArray<SGKaraokeLine *> *> *sg_lyrics;
+static NSMutableDictionary<NSString *, NSArray<SGKaraokeLine *> *> *sg_originalLyrics;
 static NSMutableSet<NSString *> *sg_requested;
 static NSDictionary<NSString *, NSString *> *sg_spclientHeaders;
 static __weak id sg_player;
@@ -56,9 +57,22 @@ static void rememberHeaders(NSURLSession *session, NSURLRequest *request) {
 }
 
 void SGKaraokeKeepLines(NSString *track, NSArray<SGKaraokeLine *> *lines) {
+    if (!track.length || !lines.count) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (sg_lyrics.count >= kKeptTracks) [sg_lyrics removeAllObjects];
+        if (sg_originalLyrics[track] == lines) return;
+        if (sg_lyrics.count >= kKeptTracks) {
+            [sg_lyrics removeAllObjects];
+            [sg_originalLyrics removeAllObjects];
+        }
+        sg_originalLyrics[track] = lines;
         sg_lyrics[track] = lines;
+        if (!SGRomanizedLyricsEnabled()) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSArray *converted = SGRomanizedLines(lines);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (sg_lyrics[track] == lines) sg_lyrics[track] = converted;
+            });
+        });
     });
 }
 
@@ -247,9 +261,10 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
 %ctor {
     // The sources that search by name learn the name from the player, so the player is caught
     // whenever one is on, not only for the redesign's lyrics and the lock screen.
-    if (!SGRedesignedUI() && !SGFlag(SGKeyLockScreenLyrics, NO) && !SGLyricsEnabled()) return;
+    if (!SGRedesignedUI() && !SGFlag(SGKeyLockScreenLyrics, NO) && !SGLyricsEnabled() && !SGRomanizedLyricsEnabled()) return;
     sg_seenTracks = [NSMutableDictionary dictionary];
     sg_lyrics = [NSMutableDictionary dictionary];
+    sg_originalLyrics = [NSMutableDictionary dictionary];
     sg_requested = [NSMutableSet set];
     sg_ownSources = SGLyricsEnabled();
     %init;

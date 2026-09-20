@@ -197,7 +197,10 @@ static NSArray<SGKaraokeLine *> *fromJSON(NSData *body) {
         [starts addObject:@([line[@"startTimeMs"] integerValue])];
         [texts addObject:[words isKindOfClass:NSString.class] ? words : @""];
     }
-    return SGKaraokeEstimatedLines(starts, texts);
+    NSArray<SGKaraokeLine *> *lines = SGKaraokeEstimatedLines(starts, texts);
+    NSString *language = [lyrics[@"language"] isKindOfClass:NSString.class] ? lyrics[@"language"] : nil;
+    for (SGKaraokeLine *line in lines) line.language = language;
+    return lines;
 }
 
 NSArray<SGKaraokeLine *> *SGKaraokeLinesFromBody(NSData *body) {
