@@ -1,4 +1,34 @@
-# Upstream fixes — 2026-09-20
+# Upstream integration — 2026-09-20
+
+## Full audio and lyrics integration
+
+The feature set reviewed through `ac3c4b7` is now merged, including JamesDSP, its effects page,
+expanded haptics, timed pronunciation/translation, overlapping voices and instrumental-break dots.
+The fixes-only notes below describe the earlier checkpoint, not the current feature set.
+
+Your generated Japanese/Mandarin/Korean pronunciation remains available with Romanized lyrics on.
+Existing users with that setting enabled see pronunciation by default unless they explicitly hide it
+in the new in-lyrics pronunciation/translation menu. Provider readings take precedence over generated
+readings. Original lyrics and the Lyrics/Connect/Queue footer remain in place; settings-row alignment,
+lock-screen pronunciation, and background/paused rendering limits are retained.
+
+JamesDSP remains off by default. Turn it on under Mod Settings → Audio effects to test effects;
+audio processing consumes additional power while enabled. The actual Japanese Spotify SingAlong
+vocal-reduction action is still unimplemented: JamesDSP is not a substitute for Spotify's karaoke
+service, and no microphone navigation shortcut has been added.
+
+The pre-feature-merge checkpoint is `9359e34`, also kept locally as
+`backup/pre-full-upstream-2026-09-20`. Build without FLEX and retain your previous IPA.
+In addition to the checks below, test the in-lyrics pronunciation/translation menu and text-size
+ordering, simultaneous duet lines, break dots, pause/seek/track changes, and Audio effects on/off.
+Check an audible effect such as EQ at moderate volume, then disable the master switch and confirm
+normal sound, including after connecting and disconnecting CarPlay.
+
+`Check lyrics and audio integration` runs the Foundation parser/pronunciation tests, renderer syntax
+check with the current iOS SDK, and JamesDSP's asset-free bypass/restart/sample-rate/reset checks
+on GitHub's Mac runner. These do not replace device testing or a full IPA build.
+
+## Earlier fixes-only checkpoint
 
 Selectively integrated from `skopevoj/spoti.pw`, reviewed through `ac3c4b7`:
 

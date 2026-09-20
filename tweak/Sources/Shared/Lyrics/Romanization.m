@@ -111,6 +111,7 @@ static SGKaraokeLine *convertLine(SGKaraokeLine *source, NSString *language) {
     line.words = source.words;
     line.start = source.start; line.end = source.end;
     line.voice = source.voice; line.align = source.align;
+    line.translation = source.translation;
     NSString *text = SGKaraokeLineText(source);
     NSString *local = matches(text, @"[\\p{Hiragana}\\p{Katakana}\\p{Hangul}]") ? languageOf(text) : language;
     line.language = source.language ?: local;

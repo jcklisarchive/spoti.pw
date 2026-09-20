@@ -1,0 +1,31 @@
+name: Check lyrics and audio integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/full-upstream]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check layer boundaries
+        run: bash scripts/check-layers.sh tweak/Sources
+      - name: Test pronunciation, translations and rendering policy
+        run: sh harness/lyrics/build.sh
+      - name: Build and test audio effects
+        run: |
+          sh harness/jamesdsp/build.sh
+          harness/jamesdsp/build/jamesdsp --smoke
+      - name: Check rewritten renderer against the current iOS SDK
+        run: |
+          xcrun --sdk iphoneos clang -target arm64-apple-ios16.0 \
+            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            -fobjc-arc -fblocks -fsyntax-only -I tweak/Sources \
+            tweak/Sources/Redesigned/Lyrics/SGRKaraokeView.m \
+            tweak/Sources/Redesigned/Lyrics/LyricsText.m
