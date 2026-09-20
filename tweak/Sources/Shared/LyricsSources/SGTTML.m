@@ -202,7 +202,7 @@ typedef NS_ENUM(NSInteger, SGTTMLPart) {
         if (_readingWord) [_readingText appendString:characters];
         return;
     }
-    if (self.top == _stack.firstObject) [_plain appendString:characters];
+    if (_reading != SGTTMLPartNone || self.top == _stack.firstObject) [_plain appendString:characters];
     if (_word) {
         [_word appendString:characters];
         return;

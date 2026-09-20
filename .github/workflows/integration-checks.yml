@@ -29,3 +29,5 @@ jobs:
             -fobjc-arc -fblocks -fsyntax-only -I tweak/Sources \
             tweak/Sources/Redesigned/Lyrics/SGRKaraokeView.m \
             tweak/Sources/Redesigned/Lyrics/LyricsText.m
+      - name: Build visual lyrics harness
+        run: sh harness/lyrics/build-sim.sh

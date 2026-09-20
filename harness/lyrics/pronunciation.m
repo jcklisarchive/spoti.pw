@@ -41,17 +41,17 @@ int main(int argc, const char **argv) {
         check([SGKaraokeLineText(lines[2].backing.pronunciation) isEqualToString:@"aa"], @"Backing pronunciation stays separate");
         check(!SGTTMLLines(@"<tt><p begin='1s'>broken"), @"Reject incomplete XML");
         NSString *headXML = @"<tt xml:lang='zh-Hans'><head><metadata><iTunesMetadata>"
-            "<translations><translation xml:lang='en-US'><text for='L1'>Hello</text></translation></translations>"
+            "<translations><translation xml:lang='en-US'><text for='L1'>Hello <span role='x-bg'>(echo)</span></text></translation></translations>"
             "<transliterations><transliteration xml:lang='zh-Latn'><text for='L1'>"
             "<span begin='1s' end='2s'>nǐ</span> <span begin='2s' end='3s'>hǎo</span>"
             "</text></transliteration></transliterations></iTunesMetadata></metadata></head>"
             "<body><p key='L1' begin='1s' end='3s'>你好</p></body></tt>";
         SGKaraokeLine *head = SGTTMLLines(headXML).firstObject;
-        check([head.translation isEqualToString:@"Hello"], @"Read upstream header translation by language");
+        check([head.translation isEqualToString:@"Hello (echo)"], @"Header translation retains backing text");
         check([SGKaraokeLineText(head.pronunciation) isEqualToString:@"nǐ hǎo"] && head.pronunciation.words[1].start == 2000,
               @"Read upstream header pronunciation and its word timing");
         SGKaraokeLine *headCopy = SGRomanizedLines(@[head]).firstObject;
-        check([headCopy.translation isEqualToString:@"Hello"] && [headCopy.language isEqualToString:@"zh-Hans"],
+        check([headCopy.translation isEqualToString:@"Hello (echo)"] && [headCopy.language isEqualToString:@"zh-Hans"],
               @"Pronunciation snapshots preserve upstream translation and language");
         SGKaraokeLine *overlap = [SGKaraokeLine new];
         overlap.start = 1500; overlap.end = 4000;
